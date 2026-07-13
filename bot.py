@@ -37,6 +37,25 @@ logging.basicConfig(
 )
 log = logging.getLogger("foreman-bot")
 
+# Bump this string whenever the backfill algorithm changes. On mismatch, all
+# non-manual tracked rows are wiped once and rebuilt from real charge history
+# on the next reconciliation cycle (wrongly-granted roles get revoked then).
+BACKFILL_VERSION = "2-charge-history"
+
+
+def _migrate_backfill(tracker: TenureTracker) -> None:
+    if tracker.get_state("backfill_version") == BACKFILL_VERSION:
+        return
+    cleared = tracker.reset_nonmanual_rows()
+    tracker.set_state("backfill_version", BACKFILL_VERSION)
+    if cleared:
+        log.warning(
+            "Backfill migration to %s: cleared %d tracked member(s). The next "
+            "reconciliation cycle recomputes tenure from real charge history and "
+            "revokes any roles that were granted from inflated credit.",
+            BACKFILL_VERSION, cleared,
+        )
+
 
 async def _ensure_role(
     guild: discord.Guild, name: str, persisted_id: int | None
@@ -140,6 +159,7 @@ def make_bot(cfg: config.Config) -> discord.Client:
     bot = discord.Client(intents=intents)
     tree = app_commands.CommandTree(bot)
     tracker = TenureTracker(cfg.db_path)
+    _migrate_backfill(tracker)
 
     # These get populated in on_ready, then captured by closures below.
     state: dict = {"reconciler": None, "guild_id": None, "role_id": None, "started": False}

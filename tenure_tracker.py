@@ -43,6 +43,40 @@ def _parse(raw: str) -> datetime:
     return datetime.fromisoformat(raw)
 
 
+def compute_streak_start(
+    paid_charge_dates: list[datetime],
+    *,
+    now: datetime,
+    max_gap_days: float,
+) -> datetime | None:
+    """
+    Given the dates of a patron's SUCCESSFUL charges, return the start date of
+    their most recent UNBROKEN monthly streak — or None if they have no live
+    streak at all.
+
+    Walks backward from the newest charge, chaining charges while the gap
+    between consecutive ones is <= max_gap_days (one billing cycle plus grace).
+    Any bigger gap breaks the chain: earlier charges are ancient history and
+    earn no credit. A patron who paid in June 2025, lapsed, and paid again in
+    June 2026 gets credit only from the June 2026 charge.
+    """
+    if not paid_charge_dates:
+        return None
+    ds = sorted(paid_charge_dates, reverse=True)
+    # Newest charge must itself be recent, otherwise there is no live streak.
+    if (now - ds[0]).total_seconds() / 86400.0 > max_gap_days:
+        return None
+    streak_start = ds[0]
+    prev = ds[0]
+    for d in ds[1:]:
+        gap = (prev - d).total_seconds() / 86400.0
+        if gap > max_gap_days:
+            break
+        streak_start = d
+        prev = d
+    return streak_start
+
+
 @dataclass
 class TenureRow:
     discord_id: str
@@ -229,6 +263,20 @@ class TenureTracker:
     def remove(self, discord_id: str) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM foremen WHERE discord_id = ?", (discord_id,))
+
+    def reset_nonmanual_rows(self) -> int:
+        """
+        Delete every tracked row EXCEPT manual grants. Used for one-time
+        migrations when the backfill algorithm changes: the next reconciliation
+        cycle re-evaluates everyone from scratch with the new rules.
+        Exclusions and bot_state are untouched.
+        """
+        with self._conn() as c:
+            cur = c.execute(
+                "DELETE FROM foremen WHERE patreon_id != ?",
+                (MANUAL_OVERRIDE_PATREON_ID,),
+            )
+            return cur.rowcount
 
     # --- exclusion list (manual revoke is sticky) ---------------------------
 

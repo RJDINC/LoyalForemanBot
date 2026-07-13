@@ -61,7 +61,7 @@ Within ~30 seconds the bot will:
 
 To test: run `/foreman-status` in Discord. (You'll need Manage Roles permission.) On first deploy you should see a big number in `granted` — that's the backfill.
 
-> **Note on backfill accuracy**: Patreon's API tells us when each patron first joined your campaign, but not when they specifically joined the Foreman tier. So if someone was on a cheaper tier for a year and upgraded to Foreman last week, the bot will treat them as a long-time Foreman and grant the role. In practice this is the same way most people *think* about loyalty rewards, but worth knowing.
+> **How backfill is calculated**: on first sighting of each patron, the bot fetches their real charge history from Patreon and finds their most recent **unbroken monthly streak** of successful charges (a gap bigger than one billing cycle + the grace period breaks the streak). Someone who paid for a month in 2025, lapsed, and came back last month gets credit only from last month — not from their first-ever pledge date. One caveat remains: charges on *any* tier count toward the streak, so someone who paid a cheaper tier for 6 months and upgraded to Foreman last week is treated as 6 months tenured.
 
 ---
 

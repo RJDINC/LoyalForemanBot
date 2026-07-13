@@ -6,7 +6,10 @@ Algorithm (single cycle):
   1. Snapshot `now`. Set `cycle_started = now`.
   2. Fetch every member of the campaign from Patreon.
   3. For each member with the Foreman tier:
-        a. If `is_active` (active_patron + Paid): tracker.upsert_active(...)
+        a. If `is_active` (active_patron + Paid): tracker.upsert_active(...).
+           On FIRST sighting, backfill foreman_since from the member's real
+           charge history (start of their most recent unbroken monthly streak
+           of paid charges — one extra API call, once per member ever).
         b. Else (declined / former / unpaid): tracker.mark_lapsed_or_reset(..., grace_days)
      For members WITHOUT the Foreman tier, we ignore them — they'll get aged
      out by step 5.
@@ -30,7 +33,11 @@ import discord
 
 from config import Config
 from patreon_client import PatreonClient
-from tenure_tracker import MANUAL_OVERRIDE_PATREON_ID, TenureTracker
+from tenure_tracker import (
+    MANUAL_OVERRIDE_PATREON_ID,
+    TenureTracker,
+    compute_streak_start,
+)
 
 log = logging.getLogger(__name__)
 
@@ -97,11 +104,32 @@ class Reconciler:
 
                 foremen_seen += 1
                 if member.is_active:
+                    # First sighting: backfill tenure from their REAL charge
+                    # history — the start of their most recent unbroken monthly
+                    # streak. (pledge_relationship_start is "first ever pledge"
+                    # and never resets on a lapse, so it over-credits returners.)
+                    historical_since = None
+                    if self._tracker.get(member.discord_user_id) is None:
+                        try:
+                            paid_dates = await pc.fetch_paid_charge_dates(member.member_id)
+                            historical_since = compute_streak_start(
+                                paid_dates,
+                                now=cycle_started,
+                                max_gap_days=31 + cfg.lapse_grace_days,
+                            )
+                        except Exception:
+                            # Conservative fallback: no historical credit, clock
+                            # starts today. Better to under-credit than hand the
+                            # role to a lapsed returner.
+                            log.exception(
+                                "Charge-history fetch failed for member %s; starting their clock at today",
+                                member.member_id,
+                            )
                     self._tracker.upsert_active(
                         discord_id=member.discord_user_id,
                         patreon_id=member.member_id,
                         now=cycle_started,
-                        historical_since=member.pledge_relationship_start,
+                        historical_since=historical_since,
                     )
                 else:
                     self._tracker.mark_lapsed_or_reset(
