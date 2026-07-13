@@ -98,7 +98,10 @@ Railway is a service that runs the bot 24/7 in the cloud. You'll create a free a
 
 1. Open <https://railway.com/login> in a new tab. Click **Login with GitHub**. If you don't have a GitHub account, create one — it's free. If asked to authorize Railway to access your GitHub, say yes.
 2. Once on the Railway dashboard, click **+ New Project** (top right) → **Deploy from GitHub repo**.
-3. Pick the bot's repository from the list. (The person who handed you this bot will have shared a GitHub link — pick that one. If you don't see it, you may need to install the Railway GitHub app and grant access.)
+3. The bot's code lives at <https://github.com/RJDINC/LoyalForemanBot>. To deploy it, you first need a copy on your own GitHub account:
+   - Open that link (sign into GitHub — you'll have created an account in the previous step when signing up for Railway).
+   - Click the **Fork** button near the top right, then **Create fork** on the next screen. That's it — GitHub now shows the copy under your own account.
+   - Back in Railway, pick **LoyalForemanBot** from the repo list. (If the list is empty, click **Configure GitHub App** and grant Railway access to your repositories.)
 4. Railway starts building. The first build will probably FAIL — that's expected because we haven't set the tokens yet. Don't panic.
 5. Click into the project. You'll see your bot as a "service" tile. Click the tile.
 6. Click the **Variables** tab.
