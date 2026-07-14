@@ -61,7 +61,7 @@ Within ~30 seconds the bot will:
 
 To test: run `/foreman-status` in Discord. (You'll need Manage Roles permission.) On first deploy you should see a big number in `granted` — that's the backfill.
 
-> **How backfill is calculated**: on first sighting of each patron, the bot fetches their real charge history from Patreon and finds their most recent **unbroken monthly streak** of successful charges (a gap bigger than one billing cycle + the grace period breaks the streak). Someone who paid for a month in 2025, lapsed, and came back last month gets credit only from last month — not from their first-ever pledge date. One caveat remains: charges on *any* tier count toward the streak, so someone who paid a cheaper tier for 6 months and upgraded to Foreman last week is treated as 6 months tenured.
+> **How backfill is calculated**: on first sighting of each patron, the bot fetches their real charge history from Patreon and finds their most recent **unbroken monthly streak** of successful charges **on the Foreman tier specifically** (a gap bigger than one billing cycle + the grace period breaks the streak). Someone who paid for a month in 2025, lapsed, and came back last month gets credit only from last month. Months paid on a cheaper tier earn nothing — an upgrader's clock starts when they started paying for Foreman. If Patreon's records for a very old charge are missing tier information, that charge earns no credit (the bot always errs toward under-crediting); `/foreman-grant` is the manual fix for any patron who gets short-changed.
 
 ---
 

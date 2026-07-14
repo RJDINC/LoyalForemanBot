@@ -9,7 +9,7 @@ Algorithm (single cycle):
         a. If `is_active` (active_patron + Paid): tracker.upsert_active(...).
            On FIRST sighting, backfill foreman_since from the member's real
            charge history (start of their most recent unbroken monthly streak
-           of paid charges — one extra API call, once per member ever).
+           of paid FOREMAN-TIER charges — one extra API call, once per member).
         b. Else (declined / former / unpaid): tracker.mark_lapsed_or_reset(..., grace_days)
      For members WITHOUT the Foreman tier, we ignore them — they'll get aged
      out by step 5.
@@ -111,7 +111,9 @@ class Reconciler:
                     historical_since = None
                     if self._tracker.get(member.discord_user_id) is None:
                         try:
-                            paid_dates = await pc.fetch_paid_charge_dates(member.member_id)
+                            paid_dates = await pc.fetch_paid_charge_dates(
+                                member.member_id, tier_id=self._tier_id
+                            )
                             historical_since = compute_streak_start(
                                 paid_dates,
                                 now=cycle_started,

@@ -157,10 +157,16 @@ class PatreonClient:
             f"No tier named '{tier_name}' found on the campaign. Available tiers: {available}"
         )
 
-    async def fetch_paid_charge_dates(self, member_id: str) -> list[datetime]:
+    async def fetch_paid_charge_dates(
+        self, member_id: str, *, tier_id: str | None = None
+    ) -> list[datetime]:
         """
         Fetch one member's pledge history and return the dates of their
         SUCCESSFUL charges, sorted oldest-first.
+
+        When `tier_id` is given, only charges made ON THAT TIER count — a
+        patron's months on a cheaper tier earn no Foreman credit, and a
+        downgrade-then-return shows up as a gap that breaks the streak.
 
         Used to compute real continuous-tenure streaks: `pledge_relationship_start`
         is useless for that (it's "first ever pledge" and never resets when a
@@ -170,7 +176,7 @@ class PatreonClient:
 
         params = {
             "include": "pledge_history",
-            "fields[pledge-event]": "date,type,payment_status",
+            "fields[pledge-event]": "date,type,payment_status,tier_id",
         }
         async with self._session.get(f"{API_ROOT}/members/{member_id}", params=params) as resp:
             if resp.status != 200:
@@ -180,22 +186,33 @@ class PatreonClient:
                 )
             payload = await resp.json()
 
-        dates: list[datetime] = []
-        for item in payload.get("included", []):
-            if item.get("type") != "pledge-event":
+        return _paid_dates_from_history(payload.get("included", []), tier_id=tier_id)
+
+
+def _paid_dates_from_history(included: list, *, tier_id: str | None = None) -> list[datetime]:
+    """Pure helper: extract successful-charge dates from pledge-event items."""
+    dates: list[datetime] = []
+    for item in included:
+        if item.get("type") != "pledge-event":
+            continue
+        attrs = item.get("attributes", {})
+        event_type = attrs.get("type")
+        status = (attrs.get("payment_status") or "").strip().lower()
+        # 'subscription' = a recurring monthly charge; 'pledge_start' can carry
+        # the initial charge on charge-upfront campaigns. Count only money
+        # that actually went through.
+        if event_type not in ("subscription", "pledge_start") or status not in ("paid", "valid"):
+            continue
+        if tier_id is not None:
+            event_tier = attrs.get("tier_id")
+            # Strict: events with a missing or different tier earn no credit.
+            if event_tier is None or str(event_tier) != str(tier_id):
                 continue
-            attrs = item.get("attributes", {})
-            event_type = attrs.get("type")
-            status = (attrs.get("payment_status") or "").strip().lower()
-            # 'subscription' = a recurring monthly charge; 'pledge_start' can carry
-            # the initial charge on charge-upfront campaigns. Count only money
-            # that actually went through.
-            if event_type in ("subscription", "pledge_start") and status in ("paid", "valid"):
-                dt = _parse_dt(attrs.get("date"))
-                if dt:
-                    dates.append(dt)
-        dates.sort()
-        return dates
+        dt = _parse_dt(attrs.get("date"))
+        if dt:
+            dates.append(dt)
+    dates.sort()
+    return dates
 
     async def iter_members(self) -> AsyncIterator[PatreonMember]:
         assert self._session is not None, "Use `async with PatreonClient(...)`"

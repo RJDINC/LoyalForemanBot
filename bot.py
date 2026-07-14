@@ -40,7 +40,7 @@ log = logging.getLogger("foreman-bot")
 # Bump this string whenever the backfill algorithm changes. On mismatch, all
 # non-manual tracked rows are wiped once and rebuilt from real charge history
 # on the next reconciliation cycle (wrongly-granted roles get revoked then).
-BACKFILL_VERSION = "2-charge-history"
+BACKFILL_VERSION = "3-foreman-tier-only"
 
 
 def _migrate_backfill(tracker: TenureTracker) -> None:

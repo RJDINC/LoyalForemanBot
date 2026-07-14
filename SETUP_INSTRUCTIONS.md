@@ -214,7 +214,11 @@ Run `/foreman-health` first. If everything's green, the most likely causes are:
 
 ### "The bot gave someone the role but they don't deserve it"
 
-Tenure is computed from the patron's real charge history: their most recent unbroken monthly streak of successful payments. Lapsing longer than the grace period breaks the streak — a patron who paid once a year ago and just came back gets credit only from their return. One deliberate leniency: paid charges on *any* tier count toward the streak, so someone who paid a cheaper tier for 6 months and upgraded to Foreman last week counts as 6 months tenured. If a specific grant still looks wrong, run `/foreman-revoke @them` to take the role away permanently, and `/foreman-check @them` to see exactly what the bot believes about their tenure.
+Tenure is computed from the patron's real charge history: their most recent unbroken monthly streak of successful payments **on the Foreman tier only**. Lapsing longer than the grace period breaks the streak — a patron who paid once a year ago and just came back gets credit only from their return. Months paid on a different tier earn nothing; an upgrader's clock starts when they started paying for Foreman. If a specific grant still looks wrong, run `/foreman-revoke @them` to take the role away permanently, and `/foreman-check @them` to see exactly what the bot believes about their tenure.
+
+### "Someone deserves the role but didn't get it"
+
+The bot errs toward under-crediting: if Patreon's records for an old charge are missing tier information, that charge earns no credit. Check what the bot believes with `/foreman-check @them`; if they genuinely qualify, `/foreman-grant @them` gives them the role permanently.
 
 ### "The bot is offline"
 
