@@ -188,32 +188,6 @@ class PatreonClient:
 
         return _paid_dates_from_history(payload.get("included", []), tier_id=tier_id)
 
-
-def _paid_dates_from_history(included: list, *, tier_id: str | None = None) -> list[datetime]:
-    """Pure helper: extract successful-charge dates from pledge-event items."""
-    dates: list[datetime] = []
-    for item in included:
-        if item.get("type") != "pledge-event":
-            continue
-        attrs = item.get("attributes", {})
-        event_type = attrs.get("type")
-        status = (attrs.get("payment_status") or "").strip().lower()
-        # 'subscription' = a recurring monthly charge; 'pledge_start' can carry
-        # the initial charge on charge-upfront campaigns. Count only money
-        # that actually went through.
-        if event_type not in ("subscription", "pledge_start") or status not in ("paid", "valid"):
-            continue
-        if tier_id is not None:
-            event_tier = attrs.get("tier_id")
-            # Strict: events with a missing or different tier earn no credit.
-            if event_tier is None or str(event_tier) != str(tier_id):
-                continue
-        dt = _parse_dt(attrs.get("date"))
-        if dt:
-            dates.append(dt)
-    dates.sort()
-    return dates
-
     async def iter_members(self) -> AsyncIterator[PatreonMember]:
         assert self._session is not None, "Use `async with PatreonClient(...)`"
         if not self._campaign_id:
@@ -267,3 +241,29 @@ def _paid_dates_from_history(included: list, *, tier_id: str | None = None) -> l
                 params = None
             else:
                 url = None
+
+
+def _paid_dates_from_history(included: list, *, tier_id: str | None = None) -> list[datetime]:
+    """Pure helper: extract successful-charge dates from pledge-event items."""
+    dates: list[datetime] = []
+    for item in included:
+        if item.get("type") != "pledge-event":
+            continue
+        attrs = item.get("attributes", {})
+        event_type = attrs.get("type")
+        status = (attrs.get("payment_status") or "").strip().lower()
+        # 'subscription' = a recurring monthly charge; 'pledge_start' can carry
+        # the initial charge on charge-upfront campaigns. Count only money
+        # that actually went through.
+        if event_type not in ("subscription", "pledge_start") or status not in ("paid", "valid"):
+            continue
+        if tier_id is not None:
+            event_tier = attrs.get("tier_id")
+            # Strict: events with a missing or different tier earn no credit.
+            if event_tier is None or str(event_tier) != str(tier_id):
+                continue
+        dt = _parse_dt(attrs.get("date"))
+        if dt:
+            dates.append(dt)
+    dates.sort()
+    return dates
