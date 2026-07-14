@@ -269,7 +269,10 @@ def make_bot(cfg: config.Config) -> discord.Client:
             summary = await reconciler.run_once()
         except Exception as e:
             log.exception("Manual reconciliation failed")
-            await interaction.followup.send(f"Reconciliation failed: `{e}`", ephemeral=True)
+            try:
+                await interaction.followup.send(f"Reconciliation failed: `{e}`", ephemeral=True)
+            except discord.HTTPException:
+                log.warning("Could not deliver /foreman-status failure reply (interaction expired)")
             return
 
         lines = [f"**Foreman reconciliation** — {summary['cycle_started']}"]
@@ -279,7 +282,12 @@ def make_bot(cfg: config.Config) -> discord.Client:
         lines.append(f"- Role granted this run:    **{summary['granted']}**")
         lines.append(f"- Role revoked this run:    **{summary['revoked']}**")
         lines.append(f"- Dropped (left tier):      **{summary['dropped']}**")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        try:
+            await interaction.followup.send("\n".join(lines), ephemeral=True)
+        except discord.HTTPException:
+            # A very long first cycle can outlive the 15-minute interaction
+            # window; the cycle itself still completed fine — check the logs.
+            log.warning("Could not deliver /foreman-status reply (interaction expired); summary: %s", summary)
 
     @tree.command(
         name="foreman-check",

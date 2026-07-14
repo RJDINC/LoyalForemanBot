@@ -63,6 +63,9 @@ class Reconciler:
         self._tier_id = tier_id
         self.last_summary: dict | None = None
         self.last_error: str | None = None
+        # Serializes cycles: /foreman-status during the hourly run must wait,
+        # not start a second concurrent sweep (duplicate API load, double DMs).
+        self._cycle_lock = asyncio.Lock()
 
     async def run_forever(self) -> None:
         interval = self._cfg.check_interval_minutes * 60
@@ -76,6 +79,10 @@ class Reconciler:
             await asyncio.sleep(interval)
 
     async def run_once(self) -> dict:
+        async with self._cycle_lock:
+            return await self._run_once_locked()
+
+    async def _run_once_locked(self) -> dict:
         cfg = self._cfg
         cycle_started = datetime.now(timezone.utc)
         log.info("Reconciliation cycle starting at %s", cycle_started.isoformat())
@@ -186,6 +193,10 @@ class Reconciler:
                     # Only DM on the FIRST successful grant (when tracker flips False -> True)
                     if not row.role_granted:
                         await _send_congrats_dm(member, role, guild, cfg.tenure_days)
+            elif eligible and has_role and not row.role_granted:
+                # They already hold the role (e.g. re-tracked after a backfill
+                # migration) — sync the flag so /foreman-check tells the truth.
+                self._tracker.set_role_granted(row.discord_id, True)
             elif not eligible and has_role:
                 if await _safe_remove_role(member, role, reason="Loyal Foreman: tenure lapsed"):
                     self._tracker.set_role_granted(row.discord_id, False)

@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncIterator
 
 import aiohttp
@@ -67,10 +67,14 @@ def _parse_dt(raw: str | None) -> datetime | None:
         return None
     # Patreon returns ISO 8601 with +0000 offset
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         log.warning("Failed to parse datetime: %r", raw)
         return None
+    # Naive timestamps would crash comparisons with our aware clock — force UTC.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _extract_discord_id(user_attrs: dict) -> str | None:
