@@ -114,19 +114,24 @@ class Reconciler:
                             paid_dates = await pc.fetch_paid_charge_dates(
                                 member.member_id, tier_id=self._tier_id
                             )
-                            historical_since = compute_streak_start(
-                                paid_dates,
-                                now=cycle_started,
-                                max_gap_days=31 + cfg.lapse_grace_days,
-                            )
                         except Exception:
-                            # Conservative fallback: no historical credit, clock
-                            # starts today. Better to under-credit than hand the
-                            # role to a lapsed returner.
+                            # Do NOT write a row we can't backfill correctly —
+                            # leave them untracked so the next hourly cycle
+                            # retries the fetch. Writing "clock starts today"
+                            # here would permanently rob veterans of credit.
                             log.exception(
-                                "Charge-history fetch failed for member %s; starting their clock at today",
+                                "Charge-history fetch failed for member %s; will retry next cycle",
                                 member.member_id,
                             )
+                            continue
+                        historical_since = compute_streak_start(
+                            paid_dates,
+                            now=cycle_started,
+                            max_gap_days=31 + cfg.lapse_grace_days,
+                        )
+                        # Gentle pacing so a large first-run backfill stays
+                        # under Patreon's request-rate ceiling.
+                        await asyncio.sleep(0.3)
                     self._tracker.upsert_active(
                         discord_id=member.discord_user_id,
                         patreon_id=member.member_id,

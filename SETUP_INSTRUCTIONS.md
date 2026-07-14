@@ -163,6 +163,8 @@ Back in your Discord server, type `/foreman` in any text channel. Discord should
   - ❌ Patreon API → your token is wrong or expired. Go back to Step 4, generate a fresh one, update it in Railway Variables, redeploy.
 
 - `/foreman-status` — forces a fresh check against Patreon right now and reports counts.
+
+  > The **first-ever** check reads every patron's payment history and can take **several minutes** on a campaign with many members — Patreon rate-limits how fast the bot can ask, and the bot politely waits when told to (you'll see "Patreon rate limit hit — waiting Ns" lines in the logs; that's normal, not an error). Every check after the first is fast.
 - `/foreman-check @somepatron` — shows that specific person's tenure (how many days they've been continuous, when the bot last saw them paid, whether they have the role).
 
 If `/foreman-health` is all green and `/foreman-status` shows reasonable numbers, **you're done with setup**.

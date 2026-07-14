@@ -14,6 +14,7 @@ For each member we read:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,6 +25,9 @@ import aiohttp
 log = logging.getLogger(__name__)
 
 API_ROOT = "https://www.patreon.com/api/oauth2/v2"
+
+# How many times to retry a rate-limited (429) request before giving up.
+_MAX_ATTEMPTS = 6
 
 MEMBER_FIELDS = ",".join([
     "patron_status",
@@ -93,6 +97,43 @@ class PatreonClient:
             await self._session.close()
             self._session = None
 
+    async def _get_json(self, url: str, params: dict | None, *, what: str) -> dict:
+        """
+        GET with rate-limit handling. On 429, Patreon tells us how long to wait
+        (`retry_after_seconds` in the error body) — sleep that long and retry,
+        up to _MAX_ATTEMPTS times. Anything else non-200 raises immediately.
+        """
+        assert self._session is not None, "Use `async with PatreonClient(...)`"
+
+        for attempt in range(_MAX_ATTEMPTS):
+            async with self._session.get(url, params=params) as resp:
+                if resp.status == 429:
+                    delay = 60.0
+                    try:
+                        body = await resp.json()
+                        delay = float(body["errors"][0].get("retry_after_seconds") or delay)
+                    except Exception:
+                        header = resp.headers.get("Retry-After")
+                        if header:
+                            try:
+                                delay = float(header)
+                            except ValueError:
+                                pass
+                    delay = min(max(delay, 1.0), 300.0) + 1.0
+                    log.info(
+                        "Patreon rate limit hit fetching %s — waiting %.0fs (attempt %d/%d)",
+                        what, delay, attempt + 1, _MAX_ATTEMPTS,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                if resp.status != 200:
+                    body_text = await resp.text()
+                    raise RuntimeError(
+                        f"Patreon API {resp.status} fetching {what}: {body_text[:300]}"
+                    )
+                return await resp.json()
+        raise RuntimeError(f"Patreon API still rate-limited after {_MAX_ATTEMPTS} attempts fetching {what}")
+
     async def discover(self, tier_name: str) -> tuple[str, str]:
         """
         Auto-detect the creator's first campaign and find the tier whose title
@@ -107,13 +148,7 @@ class PatreonClient:
             "fields[campaign]": "creation_name,vanity",
             "fields[tier]": "title",
         }
-        async with self._session.get(f"{API_ROOT}/campaigns", params=params) as resp:
-            if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(
-                    f"Patreon /campaigns failed ({resp.status}): {body[:300]}"
-                )
-            payload = await resp.json()
+        payload = await self._get_json(f"{API_ROOT}/campaigns", params, what="campaign list")
 
         campaigns = payload.get("data", [])
         if not campaigns:
@@ -178,14 +213,10 @@ class PatreonClient:
             "include": "pledge_history",
             "fields[pledge-event]": "date,type,payment_status,tier_id",
         }
-        async with self._session.get(f"{API_ROOT}/members/{member_id}", params=params) as resp:
-            if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(
-                    f"Patreon pledge_history fetch failed ({resp.status}) for member {member_id}: {body[:300]}"
-                )
-            payload = await resp.json()
-
+        payload = await self._get_json(
+            f"{API_ROOT}/members/{member_id}", params,
+            what=f"pledge history of member {member_id}",
+        )
         return _paid_dates_from_history(payload.get("included", []), tier_id=tier_id)
 
     async def iter_members(self) -> AsyncIterator[PatreonMember]:
@@ -202,13 +233,7 @@ class PatreonClient:
         }
 
         while url:
-            async with self._session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    raise RuntimeError(
-                        f"Patreon API {resp.status} for {url}: {body[:300]}"
-                    )
-                payload = await resp.json()
+            payload = await self._get_json(url, params, what="member list page")
 
             included = {(item["type"], item["id"]): item for item in payload.get("included", [])}
 
